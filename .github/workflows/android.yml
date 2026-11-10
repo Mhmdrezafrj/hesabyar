@@ -4,7 +4,10 @@ on:
   workflow_dispatch:
   push:
     paths:
-      - 'HesabYar_Stage2.zip'
+      - 'HesabYar_Stage3.zip'
+
+permissions:
+  contents: read
 
 jobs:
   build:
@@ -21,13 +24,22 @@ jobs:
         uses: gradle/actions/setup-gradle@v4
         with:
           gradle-version: '8.9'
-      - name: Extract Stage 2 project
-        run: unzip -o HesabYar_Stage2.zip
+      - name: Extract Stage 3 project
+        run: unzip -o HesabYar_Stage3.zip
+      - name: Run unit tests (parser + currency)
+        run: gradle -p HesabYar_Stage3 testDebugUnitTest --stacktrace
+      - name: Upload test report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: HesabYar-Stage3-test-report
+          path: HesabYar_Stage3/app/build/reports/tests/testDebugUnitTest
+          if-no-files-found: ignore
       - name: Build debug APK
-        run: gradle -p HesabYar_Stage2 assembleDebug
+        run: gradle -p HesabYar_Stage3 assembleDebug --stacktrace
       - name: Upload APK
         uses: actions/upload-artifact@v4
         with:
-          name: HesabYar-Stage2-debug-apk
-          path: HesabYar_Stage2/app/build/outputs/apk/debug/app-debug.apk
+          name: HesabYar-Stage3-debug-apk
+          path: HesabYar_Stage3/app/build/outputs/apk/debug/app-debug.apk
           if-no-files-found: error
