@@ -12,6 +12,9 @@ permissions:
 jobs:
   build:
     runs-on: ubuntu-latest
+    env:
+      KEYSTORE_BASE64: ${{ secrets.KEYSTORE_BASE64 }}
+      KEYSTORE_PASSWORD: ${{ secrets.KEYSTORE_PASSWORD }}
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -27,26 +30,50 @@ jobs:
         with:
           gradle-version: '8.9'
 
-      - name: Extract Stage 4 project
+      - name: Extract project
         run: unzip -o HesabYar_Stage4.zip
 
-      - name: Run unit tests (parser + currency)
+      - name: Prepare signing key
+        run: |
+          if [ -n "$KEYSTORE_BASE64" ] && [ -n "$KEYSTORE_PASSWORD" ]; then
+            echo "$KEYSTORE_BASE64" | base64 -d > "$RUNNER_TEMP/hesabyar.jks"
+            echo "KEYSTORE_FILE=$RUNNER_TEMP/hesabyar.jks" >> "$GITHUB_ENV"
+            echo "SIGNING=stable key (updates install over the old version)"
+          else
+            echo "SIGNING=TEMPORARY key (secrets missing: this APK cannot be installed over an older one)"
+          fi
+
+      - name: Run unit tests
         run: gradle -p HesabYar_Stage4 testDebugUnitTest --stacktrace
 
       - name: Upload test report
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: HesabYar-Stage4-test-report
+          name: HesabYar-test-report
           path: HesabYar_Stage4/app/build/reports/tests/testDebugUnitTest
           if-no-files-found: ignore
 
-      - name: Build debug APK
-        run: gradle -p HesabYar_Stage4 assembleDebug --stacktrace
+      - name: Build release APK
+        run: gradle -p HesabYar_Stage4 assembleRelease --stacktrace
+
+      - name: Name the APK with its version
+        run: |
+          VERSION=$(grep -oP 'versionName = "\K[^"]+' HesabYar_Stage4/app/build.gradle.kts)
+          mkdir -p out
+          cp HesabYar_Stage4/app/build/outputs/apk/release/app-release.apk "out/HesabYar-v${VERSION}.apk"
+          echo "VERSION=$VERSION" >> "$GITHUB_ENV"
+          ls -la out
+
+      - name: Show signing certificate (to verify the key is the stable one)
+        continue-on-error: true
+        run: |
+          APKSIGNER=$(ls "$ANDROID_HOME"/build-tools/*/apksigner | sort | tail -1)
+          "$APKSIGNER" verify --print-certs "out/HesabYar-v${VERSION}.apk" | grep -E "SHA-256|Signer #1 certificate DN"
 
       - name: Upload APK
         uses: actions/upload-artifact@v4
         with:
-          name: HesabYar-Stage4-debug-apk
-          path: HesabYar_Stage4/app/build/outputs/apk/debug/app-debug.apk
+          name: HesabYar-v${{ env.VERSION }}-apk
+          path: out/HesabYar-v${{ env.VERSION }}.apk
           if-no-files-found: error
